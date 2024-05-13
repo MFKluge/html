@@ -1,0 +1,107 @@
+body {
+    height: 100%;
+    width: 100%;
+    margin: auto auto;
+    background-color: #333;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+.grid-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-gap: 10px;
+    padding: 10px;
+    height: 95vh;
+    width: 95vw;
+}
+
+.grid-item {
+    /* height: calc(25vh - 70px); */
+    width: calc(25vw - 70px);
+    background-color: #4caf50;
+    color: white;
+    text-align: center;
+    padding: 20px;
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    -ms-border-radius: 5px;
+    -o-border-radius: 5px;
+    overflow-y: scroll;
+    scrollbar-width: thin;
+    scrollbar-color: #888 #f1f1f1;
+}
+
+.grid-item #initials {
+    margin: 0;
+    font-weight: bold;
+    font-size: larger;
+}
+
+.grid-item::-webkit-scrollbar {
+    width: 10px;
+}
+
+.grid-item::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.grid-item::-webkit-scrollbar-thumb {
+    background: #888;
+}
+
+.grid-item::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.green.active {
+    background-color: #2d682f !important;
+    color: white;
+}
+
+.yellow {
+    background-color: #ffeb3b;
+    color: black;
+}
+
+.yellow.active {
+    background-color: #d4be00 !important;
+    color: black;
+}
+
+.red {
+    background-color: #f44336;
+    color: white;
+}
+
+.red.active {
+    background-color: #ba160a !important;
+    color: white;
+}
+
+nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 2vh;
+    background-color: #333;
+}
+
+
+button {
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: x-large;
+    color: white;
+    margin-top: 5%;
+}
+
+.hidden {
+    visibility: hidden;
+}
