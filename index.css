@@ -92,7 +92,6 @@ nav {
     background-color: #333;
 }
 
-
 button {
     background-color: transparent;
     border: none;
@@ -104,4 +103,41 @@ button {
 
 .hidden {
     visibility: hidden;
+}
+
+#popup {
+    position: absolute;
+    top: 25%;
+    left: 25%;
+    width: 50vw;
+    height: 50vh;
+    border-radius: 15px;
+    -webkit-border-radius: 15px;
+    -moz-border-radius: 15px;
+    -ms-border-radius: 15px;
+    -o-border-radius: 15px;
+    background-color: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(50px);
+    filter: drop-shadow(0 0 1rem #333);
+    -webkit-filter: drop-shadow(0 0 1rem #333);
+}
+
+.listen-container {
+    display: grid;
+    gap: 3px;
+    grid-template-columns: repeat(3, 1fr);
+    padding: 0;
+}
+
+.listen-container>li {
+    width: calc(45vw /3);
+    height: calc(45vh /3);
+    list-style-type: none;
+}
+
+.listen-container>li>button {
+    width: 100%;
+    height: 100%;
+    background-color: #333;
+    margin: 5px;
 }

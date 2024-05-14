@@ -5,9 +5,11 @@ const BESTEHENDEKUERZEL = config.BESTEHENDEKUERZEL; // Kürzel der Techniker, di
 const KUERZELLAENGE = config.KUERZELLAENGE; // maximale länge der Kürzel
 const BackupIntervalle = config.BackupIntervalle; // Automatische Backup Intervalle in Millisekunden
 const backupFrequency = config.backupFrequency; // Wert aus BackupIntervalle wählen
+const leihgeraete = config.leihgeraete; // Liste der Leihgeräte
 const LOG = config.LOG; // Fehlermeldungen in der Konsole anzeigen, false lassen
 /*******************************************************/
 
+if (typeof config === "undefined") alert("Config nicht gefunden");
 
 //Damit Barcode nicht Tastaureingaben auslöst
 const loeschInput = ["Shift", "Control", "Alt", "Meta", "/"];
@@ -40,9 +42,7 @@ class Technician {
     }
 
     removeRentalObject(serialNumber) {
-        this.rentalObjects = this.rentalObjects.filter(
-            (rentalObject) => rentalObject.serialNumber !== serialNumber
-        );
+        this.rentalObjects = this.rentalObjects.filter((rentalObject) => rentalObject.serialNumber !== serialNumber);
         rentedItems.delete(serialNumber);
     }
     getMaxPriority() {
@@ -58,16 +58,18 @@ class Technician {
 }
 
 class RentalObject {
-    constructor(serialNumber, dateScanned, arzt) {
+    constructor(serialNumber, dateScanned, arzt, gegenstand) {
         this.serialNumber = serialNumber;
         this.dateScanned = dateScanned;
         this.arzt = arzt;
+        this.gegenstand = gegenstand;
     }
     toJSON() {
         return {
             serialNumber: this.serialNumber,
             dateScanned: this.dateScanned,
             arzt: this.arzt,
+            gegenstand: this.gegenstand,
         };
     }
     getDateScanned() {
@@ -103,27 +105,83 @@ class RentalObject {
         return Math.floor(difference / 1000);
     }
 
+    getGegenstand() {
+        return this.gegenstand;
+    }
+
     getPriority() {
         const dateScanned = this.getDateScanned();
         if (
             dateScanned.includes("Gerade Jetzt") ||
             dateScanned.includes("Minute") ||
             dateScanned.includes("Stunde") ||
-            (dateScanned.includes("Tag") &&
-                parseInt(dateScanned.split(" ")[0]) < GELBGRENZE)
+            (dateScanned.includes("Tag") && parseInt(dateScanned.split(" ")[0]) < GELBGRENZE)
         ) {
             return 0; // green
-        } else if (
-            dateScanned.includes("Tage") &&
-            parseInt(dateScanned.split(" ")[0]) >= GELBGRENZE &&
-            parseInt(dateScanned.split(" ")[0]) < ROTGRENZE
-        ) {
+        } else if (dateScanned.includes("Tage") && parseInt(dateScanned.split(" ")[0]) >= GELBGRENZE && parseInt(dateScanned.split(" ")[0]) < ROTGRENZE) {
             return 1; // yellow
         } else {
             return 2; // red
         }
     }
 }
+
+class DevicePopup {
+    constructor(leihgeraete) {
+        this.popup = this.createElement("div", "popup");
+        this.selectedDevice = null;
+        document.body.appendChild(this.popup);
+        this.createButtons(leihgeraete);
+    }
+
+    createElement(type, id, text) {
+        const element = document.createElement(type);
+        element.id = id;
+        if (text) {
+            element.innerText = text;
+        }
+        return element;
+    }
+
+    open() {
+        this.popup.classList.add("sichtbar");
+        log("Popup opened");
+    }
+
+    close() {
+        this.popup.classList.remove("sichtbar");
+        log("Popup closed");
+        document.body.removeChild(this.popup);
+    }
+
+    createButtons(leihgeraete) {
+        const list = this.createElement("ul", "device-list");
+        list.classList.add("listen-container");
+        leihgeraete.forEach((device) => {
+            const listItem = this.createElement("li", `${device}-list-item`);
+            const button = this.createElement("button", device, device);
+            button.addEventListener("click", () => {
+                this.selectDevice(device);
+            });
+            listItem.appendChild(button);
+            list.appendChild(listItem);
+        });
+        this.popup.appendChild(list);
+    }
+    selectDevice(device) {
+        this.selectedDevice = device;
+        this.close();
+        this.deviceSelectedResolve(device);
+    }
+
+    async getChosenGegenstand() {
+        return new Promise((resolve, reject) => {
+            this.deviceSelectedResolve = resolve;
+            this.open();
+        });
+    }
+}
+
 let technicians = techArr.map((initials) => new Technician(initials));
 createDivs();
 let swatches = document.querySelectorAll(".grid-item");
@@ -166,7 +224,7 @@ function handleKeyPress(event) {
     }
 }
 
-function processScannedData() {
+async function processScannedData() {
     const cleanedData = cleanInput(scannedData);
     const currentDate = new Date().toISOString();
     let existingItem;
@@ -174,9 +232,7 @@ function processScannedData() {
 
     const swatches = Array.from(document.querySelectorAll(".grid-item"));
     swatchWithExistingItem = swatches.find((s) => {
-        existingItem = Array.from(s.querySelectorAll("ul li")).find((li) =>
-            li.textContent.startsWith(cleanedData)
-        );
+        existingItem = Array.from(s.querySelectorAll("ul li")).find((li) => li.textContent.startsWith(cleanedData));
         return existingItem;
     });
 
@@ -203,14 +259,19 @@ function processScannedData() {
     }
     if (!activeSwatch) return;
 
-
-
     var arzt = prompt("Arzt");
     if (!arzt) {
         arzt = prompt("Arzt");
     }
+    const hilfSwatch = activeSwatch;
+    let devicePopup = new DevicePopup(leihgeraete);
+    let popup = await devicePopup.getChosenGegenstand();
+    const newItem = new RentalObject(cleanedData, currentDate, arzt, popup);
+    activeSwatch = hilfSwatch;
 
-    const newItem = new RentalObject(cleanedData, currentDate, arzt);
+    delete devicePopup;
+    delete popup;
+    delete hilfSwatch;
 
     updateSwatch(newItem);
     updateTechnicianData(newItem);
@@ -221,12 +282,9 @@ function processScannedData() {
     updateMap();
 }
 
-
 function removeExistingItem(cleanedData, swatch) {
     const technicianInitials = swatch.textContent.trim().substring(0, 2);
-    let technician = technicians.find(
-        (tech) => tech.initials === technicianInitials
-    );
+    let technician = technicians.find((tech) => tech.initials === technicianInitials);
     technician.removeRentalObject(cleanedData);
     localStorage.setItem(
         technicianInitials,
@@ -235,15 +293,14 @@ function removeExistingItem(cleanedData, swatch) {
                 serialNumber: obj.serialNumber,
                 dateScanned: obj.dateScanned,
                 arzt: obj.arzt,
+                gegenstand: obj.gegenstand,
             }))
         )
     );
 }
 
 function updateSwatch(newItem) {
-    const existingItem = Array.from(activeSwatch.querySelectorAll("ul li")).find(
-        (li) => li.textContent.startsWith(newItem.serialNumber)
-    );
+    const existingItem = Array.from(activeSwatch.querySelectorAll("ul li")).find((li) => li.textContent.startsWith(newItem.serialNumber));
     if (existingItem) {
         existingItem.remove();
     } else {
@@ -251,20 +308,15 @@ function updateSwatch(newItem) {
         const date = newItem.getDateScanned();
         const arzt = newItem.getArzt();
 
-        listItem.textContent =
-            newItem.serialNumber + " seit " + date + " bei " + arzt;
+        listItem.textContent = newItem.serialNumber + " seit " + date + " bei " + arzt + " (" + newItem.getGegenstand() + ")";
         activeSwatch.querySelector("ul").appendChild(listItem);
     }
 }
 
 function updateTechnicianData(newItem) {
     const technicianInitials = activeSwatch.textContent.trim().substring(0, 2);
-    let technician = technicians.find(
-        (tech) => tech.initials === technicianInitials
-    );
-    const existingItemIndex = technician.rentalObjects.findIndex(
-        (item) => item.serialNumber === newItem.serialNumber
-    );
+    let technician = technicians.find((tech) => tech.initials === technicianInitials);
+    const existingItemIndex = technician.rentalObjects.findIndex((item) => item.serialNumber === newItem.serialNumber);
     if (existingItemIndex !== -1) {
         technician.removeRentalObject(newItem.serialNumber);
     } else {
@@ -277,6 +329,7 @@ function updateTechnicianData(newItem) {
                 serialNumber: obj.serialNumber,
                 dateScanned: obj.dateScanned,
                 arzt: obj.arzt,
+                gegenstand: obj.gegenstand,
             }))
         )
     );
@@ -284,26 +337,19 @@ function updateTechnicianData(newItem) {
 
 function updateSwatchDisplay(technician) {
     const swatches = Array.from(document.querySelectorAll(".grid-item"));
-    const swatch = swatches.find(
-        (s) => s.textContent.trim().substring(0, 2) === technician.initials
-    );
+    const swatch = swatches.find((s) => s.textContent.trim().substring(0, 2) === technician.initials);
     const list = swatch.querySelector("ul");
     list.innerHTML = "";
 
     technician.rentalObjects.forEach((rentalObject) => {
         const listItem = document.createElement("li");
         listItem.textContent =
-            rentalObject.serialNumber +
-            " seit " +
-            rentalObject.getDateScanned() +
-            " bei " +
-            rentalObject.getArzt();
+            rentalObject.serialNumber + " seit " + rentalObject.getDateScanned() + " bei " + rentalObject.getArzt() + " (" + rentalObject.getGegenstand() + ")";
         list.appendChild(listItem);
     });
 }
 
 function populateTechnicianArrayfromLocalStorage() {
-
     const techs = Object.keys(localStorage);
 
     const uniqueTechs = new Set([...techs, ...BESTEHENDEKUERZEL]);
@@ -315,16 +361,8 @@ function loadTechnicianData() {
     technicians.forEach((technician) => {
         const storedData = localStorage.getItem(technician.initials);
         if (storedData) {
-            technician.rentalObjects = JSON.parse(storedData).map(
-                (obj) => new RentalObject(obj.serialNumber, obj.dateScanned, obj.arzt)
-            );
-            rentedItems = new Map([
-                ...rentedItems,
-                ...technician.rentalObjects.map((obj) => [
-                    obj.serialNumber,
-                    technician.initials,
-                ]),
-            ]);
+            technician.rentalObjects = JSON.parse(storedData).map((obj) => new RentalObject(obj.serialNumber, obj.dateScanned, obj.arzt, obj.gegenstand));
+            rentedItems = new Map([...rentedItems, ...technician.rentalObjects.map((obj) => [obj.serialNumber, technician.initials])]);
         }
 
         updateSwatchDisplay(technician);
@@ -359,33 +397,25 @@ function handleScan(event) {
     clearTimeout(timeout);
     timeout = setTimeout(removeActiveClass, 500);
 
-
     handleKeyPress(event);
-
 }
 
 function removeTechnicianData(technicianInitials) {
     localStorage.removeItem(technicianInitials);
-    technicians = technicians.filter(
-        (tech) => tech.initials !== technicianInitials
-    );
+    technicians = technicians.filter((tech) => tech.initials !== technicianInitials);
 }
 
 function removeTechnician(technicianInitials) {
     const technician = document.getElementById(technicianInitials);
     technician.remove();
-    technicians = technicians.filter(
-        (tech) => tech.initials !== technicianInitials
-    );
+    technicians = technicians.filter((tech) => tech.initials !== technicianInitials);
     removeTechnicianData(technicianInitials);
 }
 
 function updateTimeDisplay() {
     technicians.forEach((technician) => {
         const swatches = Array.from(document.querySelectorAll(".grid-item"));
-        const swatch = swatches.find(
-            (s) => s.textContent.trim().substring(0, 2) === technician.initials
-        );
+        const swatch = swatches.find((s) => s.textContent.trim().substring(0, 2) === technician.initials);
         const listItems = swatch.querySelectorAll("li");
         listItems.forEach((listItem, index) => {
             listItem.textContent =
@@ -393,7 +423,10 @@ function updateTimeDisplay() {
                 " seit " +
                 technician.rentalObjects[index].getDateScanned() +
                 " bei " +
-                technician.rentalObjects[index].getArzt();
+                technician.rentalObjects[index].getArzt() +
+                " (" +
+                technician.rentalObjects[index].getGegenstand() +
+                ")";
         });
     });
     log("Time updated");
@@ -404,15 +437,10 @@ function getPriority(dateScanned) {
         dateScanned.includes("Gerade Jetzt") ||
         dateScanned.includes("Minute") ||
         dateScanned.includes("Stunde") ||
-        (dateScanned.includes("Tag") &&
-            parseInt(dateScanned.split(" ")[0]) < GELBGRENZE)
+        (dateScanned.includes("Tag") && parseInt(dateScanned.split(" ")[0]) < GELBGRENZE)
     ) {
         return 0; // green
-    } else if (
-        dateScanned.includes("Tage") &&
-        parseInt(dateScanned.split(" ")[0]) >= GELBGRENZE &&
-        parseInt(dateScanned.split(" ")[0]) < ROTGRENZE
-    ) {
+    } else if (dateScanned.includes("Tage") && parseInt(dateScanned.split(" ")[0]) >= GELBGRENZE && parseInt(dateScanned.split(" ")[0]) < ROTGRENZE) {
         return 1; // yellow
     } else {
         return 2; // red
@@ -439,9 +467,7 @@ function updateColor() {
         let maxPriority = 0;
 
         listItems.forEach((listItem) => {
-            const dateScanned = listItem.textContent
-                .split("seit ")[1]
-                .split(" bei")[0];
+            const dateScanned = listItem.textContent.split("seit ")[1].split(" bei")[0];
             const currentPriority = getPriority(dateScanned);
             maxPriority = Math.max(maxPriority, currentPriority);
         });
@@ -461,11 +487,7 @@ function log(message) {
 
 document.getElementById("addTechnician").addEventListener("click", function() {
     const initials = prompt("Initalien").toLocaleUpperCase();
-    if (
-        initials &&
-        initials.length === KUERZELLAENGE &&
-        !technicians.find((tech) => tech.initials === initials)
-    ) {
+    if (initials && initials.length === KUERZELLAENGE && !technicians.find((tech) => tech.initials === initials)) {
         const newTechnician = new Technician(initials);
         technicians.push(newTechnician);
         createDiv(newTechnician.initials);
@@ -478,14 +500,12 @@ document.getElementById("addTechnician").addEventListener("click", function() {
     }
 });
 
-document
-    .getElementById("removeTechnician")
-    .addEventListener("click", function() {
-        const initials = prompt("Initalien");
-        if (initials) {
-            removeTechnician(initials);
-        }
-    });
+document.getElementById("removeTechnician").addEventListener("click", function() {
+    const initials = prompt("Initalien");
+    if (initials) {
+        removeTechnician(initials);
+    }
+});
 
 document.getElementById("reset").addEventListener("click", function() {
     const confirmation = confirm("Sicher?");
@@ -532,11 +552,7 @@ function importBackup() {
             data.forEach((tech) => {
                 const newTechnician = new Technician(tech.initials);
                 technicians.push(newTechnician);
-                tech.rentalObjects.forEach((obj) =>
-                    newTechnician.addRentalObject(
-                        new RentalObject(obj.serialNumber, obj.dateScanned)
-                    )
-                );
+                tech.rentalObjects.forEach((obj) => newTechnician.addRentalObject(new RentalObject(obj.serialNumber, obj.dateScanned)));
                 localStorage.setItem(
                     tech.initials,
                     JSON.stringify(
@@ -544,6 +560,7 @@ function importBackup() {
                             serialNumber: obj.serialNumber,
                             dateScanned: obj.dateScanned,
                             arzt: obj.arzt,
+                            gegenstand: obj.gegenstand,
                         }))
                     ),
                     tech.prio
@@ -611,7 +628,7 @@ window.addEventListener("keyup", function(event) {
 document.getElementById("slider").addEventListener("click", function() {
     const elementIds = ["addTechnician", "removeTechnician", "reset", "export", "import"];
 
-    elementIds.forEach(id => {
+    elementIds.forEach((id) => {
         const element = document.getElementById(id);
         element.classList.toggle("hidden");
     });
@@ -621,7 +638,7 @@ function setCookie(name, value, days) {
     var expires = "";
     if (days) {
         var date = new Date();
-        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
         expires = "; expires=" + date.toUTCString();
     }
     document.cookie = name + "=" + (value || "") + expires + "; path=/";
@@ -629,28 +646,28 @@ function setCookie(name, value, days) {
 
 function getCookie(name) {
     var nameEQ = name + "=";
-    var ca = document.cookie.split(';');
+    var ca = document.cookie.split(";");
     for (var i = 0; i < ca.length; i++) {
         var c = ca[i];
-        while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+        while (c.charAt(0) == " ") c = c.substring(1, c.length);
         if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
     }
     return null;
 }
 
 function autoExportBackup() {
-    const lastBackupDate = getCookie('lastBackupDate');
+    const lastBackupDate = getCookie("lastBackupDate");
     const currentDate = new Date();
 
     if (!lastBackupDate || currentDate - new Date(lastBackupDate) > backupFrequency) {
         exportBackup();
-        setCookie('lastBackupDate', currentDate.toString(), backupFrequency / (24 * 60 * 60 * 1000));
+        setCookie("lastBackupDate", currentDate.toString(), backupFrequency / (24 * 60 * 60 * 1000));
     }
 }
 
 document.querySelector(".grid-container").addEventListener("click", function(event) {
-    if (!event.target.classList.contains('grid-item')) {
+    if (!event.target.classList.contains("grid-item")) {
         removeActiveClass();
-        log('removed');
+        log("removed");
     }
 });
